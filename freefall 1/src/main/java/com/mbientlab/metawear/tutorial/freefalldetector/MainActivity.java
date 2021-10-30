@@ -20,7 +20,10 @@ import android.util.Log;
 import android.view.Menu;
 import android.view.MenuItem;
 import android.view.View;
+import android.widget.EditText;
+import android.widget.ImageView;
 import android.widget.TextView;
+import android.widget.Toast;
 
 import com.mbientlab.metawear.Data;
 import com.mbientlab.metawear.MetaWearBoard;
@@ -33,6 +36,9 @@ import com.mbientlab.metawear.builder.filter.Comparison;
 import com.mbientlab.metawear.builder.filter.ThresholdOutput;
 import com.mbientlab.metawear.builder.function.Function1;
 import com.mbientlab.metawear.module.Accelerometer;
+import com.mbientlab.metawear.module.GyroBmi160;
+import com.mbientlab.metawear.module.GyroBmi160.OutputDataRate;
+import com.mbientlab.metawear.module.GyroBmi160.AngularVelocityDataProducer;
 import com.mbientlab.metawear.module.Debug;
 import com.mbientlab.metawear.module.Logging;
 import com.mbientlab.metawear.data.Acceleration;
@@ -52,16 +58,31 @@ public class MainActivity extends Activity implements ServiceConnection {
     private long enterFallTime;
     private boolean hitGround = false;
 
-    // TODO: to be adjusted
-    private final double FALL_G_THRESHOLD = 0.3;
-    private final double HIT_G_THRESHOLD = 1.5;
-    private final long TIME_GAP = 500;
 
+    // TODO: to be adjusted
+    private final double FALL_G_THRESHOLD = 0.5;
+    private final double HIT_G_THRESHOLD = 1.9;
+    private final long MAX_TIME_GAP = 1000;
+    private final long MIN_TIME_GAP = 150;
+
+    //phone call
+    private EditText mEditTextNumber;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
+
+        //phone call stuff
+        mEditTextNumber = findViewById(R.id.edit_text_number);
+        ImageView imageCall = findViewById(R.id.image_call);
+
+        //imageCall.setOnClickListener(new View.OnClickListener() {
+            //@Override
+            //public void onClick(View view) {
+            //    makePhoneCall();
+            //}
+        //});
 
         Uri ringtoneUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE);
         ringtoneSound = RingtoneManager.getRingtone(getApplicationContext(), ringtoneUri);
@@ -70,8 +91,8 @@ public class MainActivity extends Activity implements ServiceConnection {
 
 
         findViewById(R.id.start_accel).setOnClickListener(v -> {
-            Log.i("<><><> onStart:", "Enter");
-            if (accelerometer != null ) {
+            //Log.i("<><><> onStart:", "Enter");
+            if(accelerometer != null) {
                 accelerometer.acceleration().start();
                 accelerometer.start();
                 updateStatusMessage("In Monitoring....");
@@ -81,7 +102,7 @@ public class MainActivity extends Activity implements ServiceConnection {
             }
         });
         findViewById(R.id.stop_accel).setOnClickListener(v -> {
-            Log.i("<><><> onStop:", "Enter");
+            //Log.i("<><><> onStop:", "Enter");
             accelerometer.stop();
             accelerometer.acceleration().stop();
 
@@ -89,7 +110,7 @@ public class MainActivity extends Activity implements ServiceConnection {
             hitGround = false;
 
             if (ringtoneSound != null) {
-                Log.i("<><><> onStop:", "Stop Ringtone");
+                //Log.i("<><><> onStop:", "Stop Ringtone");
                 ringtoneSound.stop();
             }
 
@@ -97,11 +118,21 @@ public class MainActivity extends Activity implements ServiceConnection {
         });
 
         findViewById(R.id.reset_board).setOnClickListener(v -> {
-            Log.i("<><><> onReset:", "Enter");
+            //Log.i("<><><> onReset:", "Enter");
 
             // try to call bindService to trigger onServiceConnected(), hence reinitilized everything
             getApplicationContext().bindService(new Intent(this, BtleService.class), this, Context.BIND_AUTO_CREATE);
         });
+    }
+
+    private void makePhoneCall() {
+        String number = mEditTextNumber.getText().toString();
+        if(number.trim().length() > 0){
+            String dial = "tel:" + number;
+            startActivity(new Intent(Intent.ACTION_CALL, Uri.parse(dial)));
+        } else{
+            Toast.makeText(MainActivity.this, "Enter Phone Number", Toast.LENGTH_SHORT).show();
+        }
     }
 
     @Override
@@ -158,22 +189,36 @@ public class MainActivity extends Activity implements ServiceConnection {
                             Acceleration ac = data.value(Acceleration.class);
                             double totalG = Math.sqrt(ac.x() * ac.x() + ac.y()*ac.y() + ac.z() * ac.z());
 
-//                            Log.i("<><><> Sampling:", data.formattedTimestamp() + ":" +
-//                                    "total G:" + totalG);
+                            double LPV = 0.0;
+
+                            Log.i("<><><> Sampling:", data.formattedTimestamp() + ":\n" +
+                                    "total G:" + totalG);
 
                             if (totalG < FALL_G_THRESHOLD) {
-                                enterFall = true;
-                                enterFallTime = data.timestamp().getTimeInMillis();
-                                Log.i("<><><> Falling:", data.formattedTimestamp() + ":" +
-                                    "total G:" + totalG);
+                                //first instance of falling below threshold
+                                if(!enterFall) {
+                                    enterFall = true;
+                                    LPV = totalG;
+                                    enterFallTime = data.timestamp().getTimeInMillis();
+                                }
+
+                                if(enterFall) {
+                                    if(totalG < LPV){
+                                        LPV = totalG;
+                                        enterFallTime = data.timestamp().getTimeInMillis();
+                                    }
+                                }
+                               // Log.i("<><><> Falling:", data.formattedTimestamp() + ":" +
+                                    //"total G:" + totalG);
                             }
                             else if (totalG > HIT_G_THRESHOLD) {
-                                if (enterFall && (data.timestamp().getTimeInMillis() - enterFallTime < TIME_GAP)) {
+                                if (enterFall && (data.timestamp().getTimeInMillis() - enterFallTime < MAX_TIME_GAP) &&
+                                        (data.timestamp().getTimeInMillis() - enterFallTime > MIN_TIME_GAP)) {
                                     // it is a legit fall
                                     hitGround = true;
 
-                                    Log.i("<><><> Landing:", data.formattedTimestamp() + ":" +
-                                            "total G:" + totalG);
+                                    //Log.i("<><><> Landing:", data.formattedTimestamp() + ":" +
+                                            //"total G:" + totalG);
 
                                     // sound alarm
                                     if (ringtoneSound != null) {
@@ -181,6 +226,10 @@ public class MainActivity extends Activity implements ServiceConnection {
 
                                         updateStatusMessage("In Monitoring.... Fall Detected!!!!");
                                     }
+
+                                    //makes phone call
+                                    makePhoneCall();
+
                                 }
                             }
 
