@@ -1,0 +1,15 @@
+<!--
+  ~ Copyright 2015 MbientLab Inc. All rights reserved.
+  -->
+
+<resources>
+
+    <!-- Base application theme. -->
+    <style name="AppTheme" parent="android:Theme.Holo.Light.DarkActionBar">
+        <!-- Customize your theme here. -->
+    </style>
+
+    <color name="bluetooth">#1111ea</color>
+    <color name="green">#11ea11</color>
+    <color name="red">#ea1111</color>
+</resources>
